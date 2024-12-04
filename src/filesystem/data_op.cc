@@ -15,8 +15,15 @@ auto FileOperation::alloc_inode(InodeType type) -> ChfsResult<inode_id_t> {
   // 3. Initialize the inode block
   //    and write the block back to block manager.
   // UNIMPLEMENTED();
-  block_id_t allocated_block_id = this->block_allocator_->allocate().unwrap();
-  inode_res = inode_manager_->allocate_inode(type, allocated_block_id).unwrap();
+  std::vector<u8> buffer(block_manager_->block_size());
+  auto res = block_allocator_->allocate();
+  if(res.is_ok()){
+    block_id_t block_id = res.unwrap();
+    inode_res = inode_manager_->allocate_inode(type,block_id);
+    auto inode = Inode(type,block_manager_->block_size());
+    inode.flush_to_buffer(buffer.data());
+    block_manager_->write_block(block_id,buffer.data());
+  }
   return inode_res;
 }
 

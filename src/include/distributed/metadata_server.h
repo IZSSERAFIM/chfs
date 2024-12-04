@@ -13,6 +13,7 @@
 
 #include "common/config.h"
 #include "common/util.h"
+#include "common/bitmap.h"
 #include "librpc/client.h"
 #include "librpc/server.h"
 #include "metadata/manager.h"
@@ -245,6 +246,7 @@ private:
   /**
    * {You can add anything you want here}
    */
+  std::mutex global_mtx;
 };
 
 } // namespace chfs
