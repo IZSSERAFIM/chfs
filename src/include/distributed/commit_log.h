@@ -56,12 +56,28 @@ public:
   auto checkpoint() -> void;
   auto recover() -> void;
   auto get_log_entry_num() -> usize;
+  auto init(std::shared_ptr<BlockManager> bm) -> void;
 
   bool is_checkpoint_enabled_;
   std::shared_ptr<BlockManager> bm_;
   /**
    * {Append anything if you need}
    */
+  block_id_t log_block_id;
+  block_id_t bitmap_block_id;
+};
+
+class Log_info{
+public:
+    txn_id_t txn_id ;
+    bool finished ;
+    u32 npairs;
+    std::pair<block_id_t,block_id_t> block_id_map[0];
+    Log_info(txn_id_t id = 0, bool finish = false) {
+      txn_id = id;
+      finished = finish;
+      npairs = (DiskBlockSize - sizeof(Log_info)) / (sizeof (block_id_t) * 2);
+    }
 };
 
 } // namespace chfs
