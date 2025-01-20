@@ -111,12 +111,6 @@ public:
   auto get_reserved_blocks() const -> usize {
     return 1 + n_table_blocks + n_bitmap_blocks;
   }
-  auto get_table_blocks() const -> usize {
-    return n_table_blocks;
-  }
-  auto get_bitmap_blocks() const -> usize {
-    return n_bitmap_blocks;
-  }
 
   // helper functions
 
@@ -125,6 +119,18 @@ public:
    * @param idx: **physical** inode ID
    */
   auto set_table(inode_id_t idx, block_id_t bid) -> ChfsNullResult;
+
+  auto allocate_inode_atomic(InodeType type, block_id_t bid, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsResult<inode_id_t>;
+
+  auto free_inode_atomic(inode_id_t id, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsNullResult;
+
+  auto set_table_atomic(inode_id_t idx, block_id_t bid, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsNullResult;
+
+  auto get_from_memory(inode_id_t id, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsResult<block_id_t>;
+
+  auto read_inode_from_memory(inode_id_t id, std::vector<u8> &buffer, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsResult<block_id_t>;
+
+  auto get_type_from_memory(inode_id_t id, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsResult<InodeType>;
 
 private:
   /**

@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "block/manager.h"
+#include "distributed/commit_log.h"
 
 namespace chfs {
 
@@ -40,7 +41,7 @@ BlockManager::BlockManager(const std::string &file)
  */
 BlockManager::BlockManager(usize block_cnt, usize block_size)
     : block_sz(block_size), file_name_("in-memory"), fd(-1),
-      block_cnt(block_cnt), in_memory(true) {
+      block_cnt(block_cnt), in_memory(true), is_log_enabled(false) {
   // An important step to prevent overflow
   this->write_fail_cnt = 0;
   this->maybe_failed = false;
@@ -55,7 +56,7 @@ BlockManager::BlockManager(usize block_cnt, usize block_size)
  * @input db_file: database file name
  */
 BlockManager::BlockManager(const std::string &file, usize block_cnt)
-    : file_name_(file), block_cnt(block_cnt), in_memory(false) {
+    : file_name_(file), block_cnt(block_cnt), in_memory(false), is_log_enabled(false) {
   this->write_fail_cnt = 0;
   this->maybe_failed = false;
   this->fd = open(file.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
@@ -77,26 +78,21 @@ BlockManager::BlockManager(const std::string &file, usize block_cnt)
 }
 
 BlockManager::BlockManager(const std::string &file, usize block_cnt, bool is_log_enabled)
-    : file_name_(file), block_cnt(block_cnt), in_memory(false) {
+    : file_name_(file), block_cnt(block_cnt), in_memory(false), is_log_enabled(is_log_enabled) {
   this->write_fail_cnt = 0;
   this->maybe_failed = false;
   // TODO: Implement this function.
   // UNIMPLEMENTED();  
   this->fd = open(file.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
   CHFS_ASSERT(this->fd != -1, "Failed to open the block manager file");
+
   auto file_size = get_file_sz(this->file_name_);
   if (file_size == 0) {
-      initialize_file(this->fd, this->total_storage_sz());
-  } 
-  else {
-    if(is_log_enabled){
-      this->block_cnt = (file_size / this->block_sz);
-    }
-    else {
-      this->block_cnt = file_size / this->block_sz; CHFS_ASSERT(this->total_storage_sz() == KDefaultBlockCnt * this->block_sz,"The file size mismatches");
-    }
+    initialize_file(this->fd, this->total_storage_sz());
+  } else {
+    this->block_cnt = file_size / this->block_sz;
   }
-  this->block_data = static_cast<u8 *>(mmap(nullptr, this->total_storage_sz(),PROT_READ | PROT_WRITE, MAP_SHARED, this->fd, 0));
+  this->block_data = static_cast<u8 *>(mmap(nullptr, this->total_storage_sz(), PROT_READ | PROT_WRITE, MAP_SHARED, this->fd, 0));
   CHFS_ASSERT(this->block_data != MAP_FAILED, "Failed to mmap the data");  
 }
 
@@ -236,6 +232,74 @@ auto BlockIterator::next(usize offset) -> ChfsNullResult {
     if (res.is_err()) {
       return ChfsNullResult(res.unwrap_error());
     }
+  }
+  return KNullOk;
+}
+
+auto BlockManager::write_block_to_memory(block_id_t block_id, const u8 *data, std::vector<std::shared_ptr<BlockOperation>> &tx_ops)
+      -> ChfsNullResult{
+  if(block_id >= block_cnt){
+    return ChfsNullResult(ErrorType::INVALID_ARG);
+  }
+  auto block_offset = block_id * this->block_sz;
+  bool is_changed = false;
+  for(usize i=0;i < this->block_sz;++i){
+    if(block_data[block_offset + i] != data[i]){
+      is_changed = true;
+      break;
+    }
+  }
+  if(is_changed){
+    std::shared_ptr<BlockOperation> new_op;
+    std::vector<u8> new_block_state(data, data + this->block_sz);
+    new_op = std::make_shared<BlockOperation>(block_id, new_block_state);
+    tx_ops.push_back(new_op);
+  }
+  return KNullOk;
+}
+
+auto BlockManager::read_block_from_memory(block_id_t block_id, u8 *data, std::vector<std::shared_ptr<BlockOperation>> &tx_ops)
+      -> ChfsNullResult{
+  if(block_id >= block_cnt){
+    return ChfsNullResult(ErrorType::INVALID_ARG);
+  }
+  bool is_tx = false;
+  usize latest_op_index = 0;
+  for(usize i=0;i<tx_ops.size();++i){
+    if(tx_ops[i]->block_id_ == block_id){
+      is_tx = true;
+      latest_op_index = i;
+    }
+  }
+  if(is_tx){
+    for(usize i=0;i<this->block_sz;++i){
+      data[i] = tx_ops[latest_op_index]->new_block_state_[i];
+    }
+    return KNullOk;
+  }
+  auto block_offset = block_id * this->block_sz;
+  for(usize i=0;i<this->block_sz;++i){
+    data[i] = block_data[block_offset + i];
+  }
+  return KNullOk;
+}
+
+auto BlockManager::write_log_entry(usize offset, const u8 *data, usize len) -> ChfsNullResult{
+  const auto base_offset = (block_cnt - 1024) * block_sz;
+  for(usize i = 0;i < len;++i){
+    block_data[base_offset + offset + i] = data[i];
+  }
+  return KNullOk;
+}
+
+auto BlockManager::write_block_for_recover(block_id_t block_id, const u8 *data)
+    -> ChfsNullResult {
+  if(block_id >= block_cnt){
+    return ChfsNullResult(ErrorType::INVALID_ARG);
+  }
+  auto block_offset = block_id * this->block_sz;
+  for(usize i=0;i<this->block_sz;++i){
+    block_data[block_offset + i] = data[i];
   }
   return KNullOk;
 }

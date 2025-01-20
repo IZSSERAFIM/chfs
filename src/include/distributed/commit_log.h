@@ -56,28 +56,44 @@ public:
   auto checkpoint() -> void;
   auto recover() -> void;
   auto get_log_entry_num() -> usize;
-  auto init(std::shared_ptr<BlockManager> bm) -> void;
 
   bool is_checkpoint_enabled_;
   std::shared_ptr<BlockManager> bm_;
   /**
    * {Append anything if you need}
    */
-  block_id_t log_block_id;
-  block_id_t bitmap_block_id;
+  u64 log_current_offset;
+  txn_id_t num_tx_in_log;
+  txn_id_t current_txn_id;
+  std::mutex log_mtx;
+
+  auto generate_txn_id() -> txn_id_t{
+    log_mtx.lock();
+    txn_id_t tmp = current_txn_id;
+    ++current_txn_id;
+    if(current_txn_id == 0){
+      current_txn_id = 1;
+    }
+    log_mtx.unlock();
+    return tmp;
+  }
 };
 
-class Log_info{
+class LogEntry{
 public:
-    txn_id_t txn_id ;
-    bool finished ;
-    u32 npairs;
-    std::pair<block_id_t,block_id_t> block_id_map[0];
-    Log_info(txn_id_t id = 0, bool finish = false) {
-      txn_id = id;
-      finished = finish;
-      npairs = (DiskBlockSize - sizeof(Log_info)) / (sizeof (block_id_t) * 2);
+  txn_id_t txn_id;
+  block_id_t block_id;
+  u8 new_block_state[0];
+
+  // attention: this function is only used for constructing a LogEntry
+  auto flush_to_buffer(u8 *buffer) const {
+    auto log_entry_ptr = reinterpret_cast<LogEntry *>(buffer);
+    log_entry_ptr->txn_id = txn_id;
+    log_entry_ptr->block_id = block_id;
+    for (int i = 0; i < DiskBlockSize; ++i) {
+      log_entry_ptr->new_block_state[i] = 0;
     }
-};
+  }
+} __attribute__((packed));
 
 } // namespace chfs

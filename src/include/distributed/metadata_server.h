@@ -215,6 +215,8 @@ public:
     }
   }
 
+  auto get_block_map_from_memory(inode_id_t id, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> std::vector<BlockInfo>;
+
 private:
   /**
    * Helper function for binding rpc handlers
@@ -246,7 +248,7 @@ private:
   /**
    * {You can add anything you want here}
    */
-  std::mutex global_mtx;
+  std::mutex mtx;
 };
 
 } // namespace chfs

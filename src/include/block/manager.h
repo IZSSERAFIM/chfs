@@ -12,6 +12,7 @@
 #pragma once
 
 #include <vector>
+#include <memory>
 
 #include "common/config.h"
 #include "common/macros.h"
@@ -21,6 +22,7 @@ namespace chfs {
 // TODO
 
 class BlockIterator;
+class BlockOperation;
 
 /**
  * BlockManager implements a block device to read/write block devices
@@ -39,6 +41,7 @@ protected:
   bool in_memory; // whether we use in-memory to emulate the block manager
   bool maybe_failed;
   usize write_fail_cnt;
+  bool is_log_enabled;
 
 public:
   /**
@@ -114,7 +117,7 @@ public:
   /**
    * Get the total number of blocks in the block manager
    */
-  auto total_blocks() const -> usize { return this->block_cnt; }
+  auto total_blocks() const -> usize { return (is_log_enabled ? this->block_cnt - 1024 : this->block_cnt); }
 
   /**
    * Get the block size of the device managed by the manager
@@ -141,6 +144,21 @@ public:
    */
   auto set_may_fail(bool may_fail) -> void {
     this->maybe_failed = may_fail;
+  }
+
+  virtual auto write_block_to_memory(block_id_t block_id, const u8 *block_data, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsNullResult;
+
+  virtual auto read_block_from_memory(block_id_t block_id, u8 *block_data, std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsNullResult;
+
+  virtual auto write_log_entry(usize offset, const u8 *data, usize len) -> ChfsNullResult;
+
+  virtual auto write_block_for_recover(block_id_t block_id, const u8 *block_data) -> ChfsNullResult;
+
+  virtual auto get_log_start() -> u8 *{
+    return block_data + ((block_cnt - 1024) * block_sz);
+  }
+  virtual auto get_log_end() -> u8 *{
+    return block_data + block_cnt * block_sz;
   }
 };
 
@@ -203,6 +221,12 @@ public:
   template <typename T> auto unsafe_get_value_ptr() -> T * {
     return reinterpret_cast<T *>(this->buffer.data() +
                                  this->cur_block_off % bm->block_sz);
+  }
+
+  auto flush_cur_block_atomic(std::vector<std::shared_ptr<BlockOperation>> &tx_ops) -> ChfsNullResult {
+    auto target_block_id =
+        this->start_block_id + this->cur_block_off / bm->block_sz;
+    return this->bm->write_block_to_memory(target_block_id, this->buffer.data(), tx_ops);
   }
 };
 

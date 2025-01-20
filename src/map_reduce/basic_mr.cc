@@ -18,6 +18,18 @@ namespace mapReduce{
         // Your code goes here
         // Hints: split contents into an array of words.
         std::vector<KeyVal> ret;
+        auto len = content.size();
+        for (unsigned int i = 0; i < len; ++i) {
+            if (!isalpha(content[i])) {
+                continue;
+            }
+            std::string word = "";
+            while (isalpha(content[i])) {
+                word.push_back(content[i]);
+                ++i;
+            }
+            ret.emplace_back(word, "1");
+        }
         return ret;
 
     }
@@ -31,6 +43,11 @@ namespace mapReduce{
         // Your code goes here
         // Hints: return the number of occurrences of the word.
         std::string ret = "0";
+        for(auto value : values){
+            auto ret_int = std::stoi(ret);
+            auto value_int = std::stoi(value);
+            ret = std::to_string(ret_int + value_int);
+        }
         return ret;
     }
 }
